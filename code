@@ -6,6 +6,34 @@ def lambda_handler(event, context):
     region = 'ap-southeast-2'
     recList = []
     try:
+    
+        table = dynamo_resource.Table(table_name)
+        scan_kwargs = {}
+        if index_name:
+            scan_kwargs["IndexName"] = index_name
+
+        start_key = None
+        done = False
+        response = []
+
+        # Hopefully we never get this large, but loop the scan if needed
+        while not done:
+            if start_key:
+                scan_kwargs["ExclusiveStartKey"] = start_key
+            scan = table.scan(**scan_kwargs)
+            for item in scan.get("Items"):
+                response.append(item)
+            start_key = scan.get("LastEvaluatedKey", None)
+            done = start_key is None
+
+        with table.batch_writer() as batch:
+            for item in response:
+                batch.delete_item(
+                    Item={
+                        primary_key=item["primary_key"]
+                        sort_key=item["sort_key"]
+                    }
+                )
         s3 = boto3.client('s3')
         dyndb = boto3.client('dynamodb', region_name=region)
         confile = s3.get_object(Bucket='awscredentialsdynamoimport',
